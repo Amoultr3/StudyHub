@@ -5,6 +5,8 @@
 
 const STORAGE_KEY = "studyhub.resources.v03";
 let activeResourceId = null;
+let editingResourceId = null;
+let notesEditorOpen = false;
 
 const seedResources = [
   {
@@ -246,6 +248,7 @@ const pages = {
           </div>
 
           <form class="resource-form" id="resourceForm">
+            <div class="form-row full" id="editingNotice" style="display:none;"><div class="warning-box">Editing existing resource. Save to update it.</div></div>
             <div class="form-row">
               <label for="resourceTitle">Title</label>
               <input id="resourceTitle" required placeholder="Example: Anatomy Textbook" />
@@ -285,12 +288,12 @@ const pages = {
             </div>
 
             <div class="form-row">
-              <label for="resourceSize">File size</label>
-              <input id="resourceSize" placeholder="Example: 246 MB, 1.2 GB" />
+              <label for="resourceSize">File size <span class="help-text">(optional)</span></label>
+              <input id="resourceSize" placeholder="Optional: 246 MB, 1.2 GB" />
             </div>
 
             <div class="form-row">
-              <label for="resourceIndexStatus">Index status</label>
+              <label for="resourceIndexStatus">Index status <span class="help-text">(AI search status)</span></label>
               <select id="resourceIndexStatus">
                 <option>Not indexed</option>
                 <option>Ready to index</option>
@@ -304,8 +307,8 @@ const pages = {
             </div>
 
             <div class="form-row full">
-              <label for="resourceLocalLocation">OneDrive / local folder location</label>
-              <input id="resourceLocalLocation" placeholder="Example: OneDrive / StudyHub Resources / 01 Textbooks" />
+              <label for="resourceLocalLocation">OneDrive / local folder location <span class="help-text">(optional)</span></label>
+              <input id="resourceLocalLocation" placeholder="Optional backup note: OneDrive / StudyHub Resources / 01 Textbooks" />
             </div>
 
             <div class="form-row full">
@@ -373,6 +376,7 @@ const pages = {
             <div class="detail-field">
               <span>Index Status</span>
               <strong>${escapeHTML(resource.indexStatus || "Not indexed")}</strong>
+              <p class="small-muted">Index means whether StudyHub/AI has processed this file's text for searching. It does not mean uploaded.</p>
             </div>
 
             <div class="detail-field">
@@ -409,11 +413,23 @@ const pages = {
 
             <div class="detail-field">
               <span>Notes</span>
-              <p>${escapeHTML(resource.notes || "No notes yet")}</p>
+              ${
+                notesEditorOpen
+                  ? `<div class="inline-editor">
+                      <textarea id="detailNotesEdit">${escapeHTML(resource.notes || "")}</textarea>
+                      <div class="inline-editor-actions">
+                        <button class="secondary-btn" onclick="closeNotesEditor('${resource.id}')">Cancel</button>
+                        <button class="primary-btn" onclick="saveResourceNotes('${resource.id}')">Save Notes</button>
+                      </div>
+                    </div>`
+                  : `<p>${escapeHTML(resource.notes || "No notes yet")}</p>`
+              }
             </div>
 
             <div class="resource-actions">
               <button class="secondary-btn" data-nav="library">Back</button>
+              <button class="secondary-btn" onclick="editResource('${resource.id}')">Edit Resource</button>
+              <button class="secondary-btn" onclick="openNotesEditor('${resource.id}')">Edit Notes</button>
               ${resource.driveLink ? `<a class="primary-btn" href="${escapeAttribute(resource.driveLink)}" target="_blank" rel="noopener">Open File</a>` : ""}
               <button class="secondary-btn" onclick="markReadyToIndex('${resource.id}')">Mark Ready to Index</button>
             </div>
@@ -527,13 +543,47 @@ function setupLibrary() {
     renderResources(search.value, typeFilter.value);
   }
 
+  const editingNotice = document.querySelector("#editingNotice");
+
+  if (editingResourceId) {
+    const resourceToEdit = getResources().find(resource => resource.id === editingResourceId);
+
+    if (resourceToEdit) {
+      toggleButton.textContent = "Cancel Editing";
+      editingNotice.style.display = "block";
+      form.classList.add("open");
+
+      document.querySelector("#resourceTitle").value = resourceToEdit.title || "";
+      document.querySelector("#resourceType").value = resourceToEdit.type || "Textbook";
+      document.querySelector("#resourceSubject").value = resourceToEdit.subject || "";
+      document.querySelector("#resourceEdition").value = resourceToEdit.edition || "";
+      document.querySelector("#resourceAuthor").value = resourceToEdit.author || "";
+      document.querySelector("#resourceFile").value = resourceToEdit.fileName || "";
+      document.querySelector("#resourceSize").value = resourceToEdit.fileSize || "";
+      document.querySelector("#resourceIndexStatus").value = resourceToEdit.indexStatus || "Not indexed";
+      document.querySelector("#resourceDriveLink").value = resourceToEdit.driveLink || "";
+      document.querySelector("#resourceLocalLocation").value = resourceToEdit.localLocation || "";
+      document.querySelector("#resourceTags").value = (resourceToEdit.tags || []).join(", ");
+      document.querySelector("#resourceChapters").value = (resourceToEdit.chapters || []).join("\n");
+      document.querySelector("#resourceNotes").value = resourceToEdit.notes || "";
+    }
+  }
+
   toggleButton.addEventListener("click", () => {
+    if (editingResourceId) {
+      editingResourceId = null;
+      render("library");
+      return;
+    }
+
     form.classList.toggle("open");
   });
 
   cancelButton.addEventListener("click", () => {
+    editingResourceId = null;
     form.classList.remove("open");
     form.reset();
+    render("library");
   });
 
   search.addEventListener("input", refreshList);
@@ -570,8 +620,23 @@ function setupLibrary() {
       createdAt: new Date().toISOString()
     };
 
-    resources.unshift(resource);
-    saveResources(resources);
+    if (editingResourceId) {
+      const updatedResources = resources.map(existingResource => {
+        if (existingResource.id !== editingResourceId) return existingResource;
+        return {
+          ...existingResource,
+          ...resource,
+          id: editingResourceId,
+          createdAt: existingResource.createdAt,
+          updatedAt: new Date().toISOString()
+        };
+      });
+      saveResources(updatedResources);
+      editingResourceId = null;
+    } else {
+      resources.unshift(resource);
+      saveResources(resources);
+    }
 
     form.reset();
     form.classList.remove("open");
@@ -640,6 +705,7 @@ function renderResources(searchTerm = "", type = "All") {
 
       <div class="resource-actions">
         <button class="secondary-btn" onclick="openResource('${resource.id}')">Details</button>
+        <button class="secondary-btn" onclick="editResource('${resource.id}')">Edit</button>
         ${resource.driveLink ? `<a class="primary-btn" href="${escapeAttribute(resource.driveLink)}" target="_blank" rel="noopener">Open File</a>` : ""}
         <button class="danger-btn" onclick="deleteResource('${resource.id}')">Delete</button>
       </div>
@@ -649,6 +715,7 @@ function renderResources(searchTerm = "", type = "All") {
 
 function openResource(id) {
   activeResourceId = id;
+  notesEditorOpen = false;
   render("resourceDetail");
 }
 
@@ -660,6 +727,46 @@ function markReadyToIndex(id) {
 
   saveResources(resources);
   activeResourceId = id;
+  render("resourceDetail");
+}
+
+
+function editResource(id) {
+  editingResourceId = id;
+  notesEditorOpen = false;
+  activeResourceId = null;
+  render("library");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function openNotesEditor(id) {
+  activeResourceId = id;
+  notesEditorOpen = true;
+  render("resourceDetail");
+}
+
+function closeNotesEditor(id) {
+  activeResourceId = id;
+  notesEditorOpen = false;
+  render("resourceDetail");
+}
+
+function saveResourceNotes(id) {
+  const textarea = document.querySelector("#detailNotesEdit");
+  const updatedNotes = textarea ? textarea.value : "";
+
+  const resources = getResources().map(resource => {
+    if (resource.id !== id) return resource;
+    return {
+      ...resource,
+      notes: updatedNotes,
+      updatedAt: new Date().toISOString()
+    };
+  });
+
+  saveResources(resources);
+  activeResourceId = id;
+  notesEditorOpen = false;
   render("resourceDetail");
 }
 

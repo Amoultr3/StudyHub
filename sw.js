@@ -1,4 +1,4 @@
-const CACHE_NAME = "studyhub-onedrive-resources-v03";
+const CACHE_NAME = "studyhub-onedrive-resources-v031-edit-notes";
 
 const FILES = [
   "./",

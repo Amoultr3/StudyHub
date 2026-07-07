@@ -644,3 +644,9 @@ kbd {
     display: grid;
   }
 }
+
+.help-text{color:var(--muted);font-size:.78rem;line-height:1.35}
+.inline-editor{display:grid;gap:10px;margin-top:10px}
+.inline-editor textarea{width:100%;min-height:140px;resize:vertical;border:1px solid var(--border);border-radius:14px;padding:12px;background:#FCFDFF}
+.inline-editor-actions{display:flex;gap:10px;justify-content:flex-end}
+.small-muted{color:var(--muted);font-size:.86rem;line-height:1.4}
